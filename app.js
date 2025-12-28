@@ -36,7 +36,9 @@ const loadStateButton = document.getElementById("loadState");
 const signOutButton = document.getElementById("signOut");
 const progressText = document.getElementById("progressText");
 const progressFill = document.getElementById("progressFill");
+const mobileHint = document.getElementById("mobileHint");
 let autoSaveTimer = null;
+let selectedBlockType = null;
 
 function renderRecipeLists() {
   rotationList.innerHTML = "";
@@ -78,6 +80,21 @@ function renderRecipeLists() {
       trialList.appendChild(card);
     }
   });
+}
+
+function updateBlockSelectionUI() {
+  document.querySelectorAll(".block").forEach((block) => {
+    const isSelected = block.dataset.type === selectedBlockType;
+    block.classList.toggle("selected", isSelected);
+  });
+}
+
+function setupMobileHint() {
+  if (!mobileHint) {
+    return;
+  }
+  const isCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+  mobileHint.classList.toggle("hidden", !isCoarsePointer);
 }
 
 function renderWeek() {
@@ -132,6 +149,12 @@ function renderWeek() {
       event.preventDefault();
       const type = event.dataTransfer.getData("text/plain");
       addMealToDay(type, index);
+    });
+    dayCard.addEventListener("click", () => {
+      if (!selectedBlockType) {
+        return;
+      }
+      addMealToDay(selectedBlockType, index);
     });
 
     weekGrid.appendChild(dayCard);
@@ -290,6 +313,9 @@ function addMealToDay(type, index) {
 
   renderWeek();
   scheduleAutoSave();
+  if (mobileHint && !mobileHint.classList.contains("hidden")) {
+    mobileHint.classList.add("hidden");
+  }
 }
 
 function clearDay(index) {
@@ -384,6 +410,11 @@ function handleDragStart(event) {
 
 document.querySelectorAll(".block").forEach((block) => {
   block.addEventListener("dragstart", handleDragStart);
+  block.addEventListener("click", () => {
+    const type = block.dataset.type;
+    selectedBlockType = selectedBlockType === type ? null : type;
+    updateBlockSelectionUI();
+  });
 });
 
 document.getElementById("recipeForm").addEventListener("submit", (event) => {
@@ -550,6 +581,7 @@ signOutButton.addEventListener("click", async () => {
 });
 
 refreshSession();
+setupMobileHint();
 
 function scheduleAutoSave() {
   if (autoSaveTimer) {

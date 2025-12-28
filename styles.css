@@ -170,6 +170,11 @@ h1 {
   color: var(--ink);
 }
 
+.block.selected {
+  box-shadow: 0 0 0 2px rgba(83, 107, 75, 0.4);
+  cursor: pointer;
+}
+
 .block.two {
   background: #f1d2b6;
 }
