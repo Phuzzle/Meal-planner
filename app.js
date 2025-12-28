@@ -66,6 +66,15 @@ function renderRecipeLists() {
     if (recipe.isRotation) {
       rotationList.appendChild(card);
     } else {
+      const promoteButton = document.createElement("button");
+      promoteButton.type = "button";
+      promoteButton.className = "recipe-promote";
+      promoteButton.textContent = "Promote";
+      promoteButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        promoteRecipe(recipe.id);
+      });
+      card.appendChild(promoteButton);
       trialList.appendChild(card);
     }
   });
@@ -223,6 +232,33 @@ async function addRecipe({ name, ingredient, grams, category, form }) {
 
   if (form) {
     form.reset();
+  }
+  renderRecipeLists();
+  scheduleAutoSave();
+}
+
+async function promoteRecipe(recipeId) {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+  if (!user) {
+    authError.textContent = "Sign in to update recipes.";
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from("recipes")
+    .update({ is_rotation: true })
+    .eq("id", recipeId);
+
+  if (error) {
+    authError.textContent = "Couldn't promote recipe. Check Supabase setup.";
+    return;
+  }
+
+  const recipe = recipes.find((item) => item.id === recipeId);
+  if (recipe) {
+    recipe.isRotation = true;
   }
   renderRecipeLists();
   scheduleAutoSave();
