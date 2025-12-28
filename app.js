@@ -161,7 +161,7 @@ function ensureActiveRecipe() {
 async function loadRecipes() {
   const { data, error } = await supabaseClient
     .from("recipes")
-    .select("id,name,is_rotation,recipe_ingredients (name, grams, category)")
+    .select("id,name,is_rotation,recipe_ingredients (name, quantity, unit)")
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -175,8 +175,8 @@ async function loadRecipes() {
     isRotation: recipe.is_rotation,
     ingredients: (recipe.recipe_ingredients || []).map((item) => ({
       name: item.name,
-      grams: item.grams,
-      category: item.category,
+      quantity: item.quantity,
+      unit: item.unit,
     })),
   }));
 
@@ -184,7 +184,7 @@ async function loadRecipes() {
   renderRecipeLists();
 }
 
-async function addRecipe({ name, ingredient, grams, category, form }) {
+async function addRecipe({ name, ingredient, quantity, unit, form }) {
   const {
     data: { user },
   } = await supabaseClient.auth.getUser();
@@ -213,8 +213,8 @@ async function addRecipe({ name, ingredient, grams, category, form }) {
     .insert({
       recipe_id: newRecipe.id,
       name: ingredient,
-      grams,
-      category,
+      quantity,
+      unit,
     });
 
   if (ingredientError) {
@@ -226,7 +226,7 @@ async function addRecipe({ name, ingredient, grams, category, form }) {
     id: newRecipe.id,
     name: newRecipe.name,
     isRotation: newRecipe.is_rotation,
-    ingredients: [{ name: ingredient, grams, category }],
+    ingredients: [{ name: ingredient, quantity, unit }],
   });
   state.activeRecipeId = newRecipe.id;
 
@@ -342,48 +342,32 @@ function buildGroceryList() {
     }
     const recipe = recipes.find((item) => item.id === meal.recipeId);
     recipe?.ingredients.forEach((ingredient) => {
-      const key = `${ingredient.category}:${ingredient.name}`;
+      const key = `${ingredient.name}:${ingredient.unit}`;
       totals[key] = totals[key] || {
         name: ingredient.name,
-        category: ingredient.category,
-        grams: 0,
+        unit: ingredient.unit,
+        quantity: 0,
       };
-      totals[key].grams += ingredient.grams;
+      totals[key].quantity += ingredient.quantity;
     });
   });
 
-  const grouped = Object.values(totals).reduce((acc, item) => {
-    acc[item.category] = acc[item.category] || [];
-    acc[item.category].push(item);
-    return acc;
-  }, {});
-
-  const categories = ["produce", "meat", "dairy", "pantry", "freezer"];
-  categories.forEach((category) => {
-    const items = grouped[category];
-    if (!items || items.length === 0) {
-      return;
-    }
-    const categoryCard = document.createElement("div");
-    categoryCard.className = "grocery-category";
-    categoryCard.innerHTML = `<h4>${category}</h4>`;
-    items.forEach((item) => {
-      const row = document.createElement("div");
-      row.className = "grocery-item";
-      const label = document.createElement("label");
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      const lineText = `${item.name} ${item.grams}g`;
-      checkbox.checked = state.checkedItems.includes(lineText);
-      checkbox.addEventListener("change", updateCopyOutput);
-      label.appendChild(checkbox);
-      const text = document.createElement("span");
-      text.textContent = lineText;
-      label.appendChild(text);
-      row.appendChild(label);
-      categoryCard.appendChild(row);
-    });
-    groceryList.appendChild(categoryCard);
+  const items = Object.values(totals);
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "grocery-item";
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    const lineText = `${item.name} ${item.quantity} ${item.unit}`;
+    checkbox.checked = state.checkedItems.includes(lineText);
+    checkbox.addEventListener("change", updateCopyOutput);
+    label.appendChild(checkbox);
+    const text = document.createElement("span");
+    text.textContent = lineText;
+    label.appendChild(text);
+    row.appendChild(label);
+    groceryList.appendChild(row);
   });
 
   if (groceryList.innerHTML === "") {
@@ -408,14 +392,16 @@ document.getElementById("recipeForm").addEventListener("submit", (event) => {
   authError.textContent = "";
   const name = document.getElementById("recipeName").value.trim();
   const ingredient = document.getElementById("ingredientName").value.trim();
-  const grams = Number(document.getElementById("ingredientGrams").value);
-  const category = document.getElementById("ingredientCategory").value;
+  const quantity = Number(
+    document.getElementById("ingredientQuantity").value
+  );
+  const unit = document.getElementById("ingredientUnit").value.trim();
 
-  if (!name || !ingredient || !grams || !category) {
+  if (!name || !ingredient || !quantity || !unit) {
     return;
   }
 
-  addRecipe({ name, ingredient, grams, category, form: event.target });
+  addRecipe({ name, ingredient, quantity, unit, form: event.target });
 });
 
 buildListButton.addEventListener("click", buildGroceryList);

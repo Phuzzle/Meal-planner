@@ -104,19 +104,18 @@
                 />
                 <input
                   type="number"
-                  id="ingredientGrams"
-                  placeholder="Grams"
-                  min="1"
+                  id="ingredientQuantity"
+                  placeholder="Quantity"
+                  min="0.01"
+                  step="0.01"
                   required
                 />
-                <select id="ingredientCategory" required>
-                  <option value="" disabled selected>Category</option>
-                  <option value="produce">Produce</option>
-                  <option value="meat">Meat</option>
-                  <option value="dairy">Dairy</option>
-                  <option value="pantry">Pantry</option>
-                  <option value="freezer">Freezer</option>
-                </select>
+                <input
+                  type="text"
+                  id="ingredientUnit"
+                  placeholder="Unit (g, ml, tbsp, can, etc.)"
+                  required
+                />
               </div>
               <button type="submit">Add trial recipe</button>
             </form>
