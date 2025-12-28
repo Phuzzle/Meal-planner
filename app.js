@@ -37,8 +37,12 @@ const signOutButton = document.getElementById("signOut");
 const progressText = document.getElementById("progressText");
 const progressFill = document.getElementById("progressFill");
 const mobileHint = document.getElementById("mobileHint");
+const pendingHint = document.getElementById("pendingHint");
+const pendingText = document.getElementById("pendingText");
+const cancelPending = document.getElementById("cancelPending");
 let autoSaveTimer = null;
 let selectedBlockType = null;
+let pendingTwoNightMealId = null;
 
 function renderRecipeLists() {
   rotationList.innerHTML = "";
@@ -95,6 +99,27 @@ function setupMobileHint() {
   }
   const isCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
   mobileHint.classList.toggle("hidden", !isCoarsePointer);
+}
+
+function updatePendingHint() {
+  if (!pendingHint || !pendingText) {
+    return;
+  }
+  if (!pendingTwoNightMealId) {
+    pendingHint.classList.add("hidden");
+    pendingText.textContent = "";
+    return;
+  }
+  const meal = state.meals[pendingTwoNightMealId];
+  if (!meal) {
+    pendingTwoNightMealId = null;
+    pendingHint.classList.add("hidden");
+    pendingText.textContent = "";
+    return;
+  }
+  const recipeName = recipes.find((item) => item.id === meal.recipeId)?.name;
+  pendingText.textContent = `Pick night 2 for ${recipeName || "this meal"}.`;
+  pendingHint.classList.remove("hidden");
 }
 
 function renderWeek() {
@@ -161,6 +186,7 @@ function renderWeek() {
   });
 
   updateProgress();
+  updatePendingHint();
 }
 
 function updateProgress() {
@@ -287,6 +313,26 @@ async function promoteRecipe(recipeId) {
 }
 
 function addMealToDay(type, index) {
+  if (type === "twoNight" && pendingTwoNightMealId) {
+    const pendingMeal = state.meals[pendingTwoNightMealId];
+    if (!pendingMeal) {
+      pendingTwoNightMealId = null;
+    } else if (state.days[index].mealId === pendingTwoNightMealId) {
+      return;
+    } else {
+      clearDay(index);
+      state.days[index].mealId = pendingTwoNightMealId;
+      state.days[index].continuation = true;
+      pendingTwoNightMealId = null;
+      renderWeek();
+      scheduleAutoSave();
+      if (mobileHint && !mobileHint.classList.contains("hidden")) {
+        mobileHint.classList.add("hidden");
+      }
+      return;
+    }
+  }
+
   const id = `meal_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const recipeId =
     type === "takeaway" || type === "mum" ? null : state.activeRecipeId;
@@ -305,10 +351,8 @@ function addMealToDay(type, index) {
   state.days[index].mealId = id;
   state.days[index].continuation = false;
 
-  if (type === "twoNight" && index + 1 < state.days.length) {
-    clearDay(index + 1);
-    state.days[index + 1].mealId = id;
-    state.days[index + 1].continuation = true;
+  if (type === "twoNight") {
+    pendingTwoNightMealId = id;
   }
 
   renderWeek();
@@ -336,6 +380,9 @@ function clearDay(index) {
     state.days[linkedIndex].continuation = false;
   }
   delete state.meals[mealId];
+  if (pendingTwoNightMealId === mealId) {
+    pendingTwoNightMealId = null;
+  }
 }
 
 function removeMeal(mealId) {
@@ -346,6 +393,9 @@ function removeMeal(mealId) {
     }
   });
   delete state.meals[mealId];
+  if (pendingTwoNightMealId === mealId) {
+    pendingTwoNightMealId = null;
+  }
   renderWeek();
   scheduleAutoSave();
 }
@@ -498,6 +548,7 @@ async function refreshSession() {
     userEmail.textContent = "";
     recipes = [];
     state.activeRecipeId = null;
+    pendingTwoNightMealId = null;
     renderRecipeLists();
     renderWeek();
     buildGroceryList();
@@ -582,6 +633,14 @@ signOutButton.addEventListener("click", async () => {
 
 refreshSession();
 setupMobileHint();
+updatePendingHint();
+
+if (cancelPending) {
+  cancelPending.addEventListener("click", () => {
+    pendingTwoNightMealId = null;
+    updatePendingHint();
+  });
+}
 
 function scheduleAutoSave() {
   if (autoSaveTimer) {
