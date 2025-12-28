@@ -7,49 +7,7 @@ const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-let recipes = [
-  {
-    id: "r1",
-    name: "Butter Chicken",
-    isRotation: true,
-    ingredients: [
-      { name: "Chicken breast", grams: 800, category: "meat" },
-      { name: "Onion", grams: 200, category: "produce" },
-      { name: "Yogurt", grams: 200, category: "dairy" },
-      { name: "Rice", grams: 500, category: "pantry" },
-    ],
-  },
-  {
-    id: "r2",
-    name: "Stir Fry",
-    isRotation: true,
-    ingredients: [
-      { name: "Broccoli", grams: 400, category: "produce" },
-      { name: "Soy sauce", grams: 30, category: "pantry" },
-      { name: "Garlic", grams: 15, category: "produce" },
-    ],
-  },
-  {
-    id: "r3",
-    name: "Chili",
-    isRotation: true,
-    ingredients: [
-      { name: "Beef mince", grams: 500, category: "meat" },
-      { name: "Kidney beans", grams: 300, category: "pantry" },
-      { name: "Onion", grams: 100, category: "produce" },
-    ],
-  },
-  {
-    id: "r4",
-    name: "Miso Salmon",
-    isRotation: false,
-    ingredients: [
-      { name: "Salmon", grams: 500, category: "meat" },
-      { name: "Miso paste", grams: 40, category: "pantry" },
-      { name: "Spring onion", grams: 50, category: "produce" },
-    ],
-  },
-];
+let recipes = [];
 
 const state = {
   days: weekdays.map((label) => ({
@@ -58,7 +16,7 @@ const state = {
     continuation: false,
   })),
   meals: {},
-  activeRecipeId: "r1",
+  activeRecipeId: null,
   checkedItems: [],
 };
 
@@ -83,6 +41,12 @@ let autoSaveTimer = null;
 function renderRecipeLists() {
   rotationList.innerHTML = "";
   trialList.innerHTML = "";
+
+  if (recipes.length === 0) {
+    rotationList.innerHTML = "<p class='hint'>No recipes yet.</p>";
+    trialList.innerHTML = "<p class='hint'>Add a recipe to get started.</p>";
+    return;
+  }
 
   recipes.forEach((recipe) => {
     const card = document.createElement("div");
@@ -174,10 +138,104 @@ function updateProgress() {
   progressFill.style.width = `${(planned / 7) * 100}%`;
 }
 
+function ensureActiveRecipe() {
+  if (recipes.length === 0) {
+    state.activeRecipeId = null;
+    return;
+  }
+  const exists = recipes.some((recipe) => recipe.id === state.activeRecipeId);
+  if (!exists) {
+    state.activeRecipeId = recipes[0].id;
+  }
+}
+
+async function loadRecipes() {
+  const { data, error } = await supabaseClient
+    .from("recipes")
+    .select("id,name,is_rotation,recipe_ingredients (name, grams, category)")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    authError.textContent = "Couldn't load recipes. Check Supabase setup.";
+    return;
+  }
+
+  recipes = (data || []).map((recipe) => ({
+    id: recipe.id,
+    name: recipe.name,
+    isRotation: recipe.is_rotation,
+    ingredients: (recipe.recipe_ingredients || []).map((item) => ({
+      name: item.name,
+      grams: item.grams,
+      category: item.category,
+    })),
+  }));
+
+  ensureActiveRecipe();
+  renderRecipeLists();
+}
+
+async function addRecipe({ name, ingredient, grams, category, form }) {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+  if (!user) {
+    authError.textContent = "Sign in to add recipes.";
+    return;
+  }
+
+  const { data: newRecipe, error: recipeError } = await supabaseClient
+    .from("recipes")
+    .insert({
+      user_id: user.id,
+      name,
+      is_rotation: false,
+    })
+    .select("id,name,is_rotation")
+    .single();
+
+  if (recipeError) {
+    authError.textContent = "Couldn't save recipe. Check Supabase setup.";
+    return;
+  }
+
+  const { error: ingredientError } = await supabaseClient
+    .from("recipe_ingredients")
+    .insert({
+      recipe_id: newRecipe.id,
+      name: ingredient,
+      grams,
+      category,
+    });
+
+  if (ingredientError) {
+    authError.textContent = "Couldn't save ingredients. Check Supabase setup.";
+    return;
+  }
+
+  recipes.push({
+    id: newRecipe.id,
+    name: newRecipe.name,
+    isRotation: newRecipe.is_rotation,
+    ingredients: [{ name: ingredient, grams, category }],
+  });
+  state.activeRecipeId = newRecipe.id;
+
+  if (form) {
+    form.reset();
+  }
+  renderRecipeLists();
+  scheduleAutoSave();
+}
+
 function addMealToDay(type, index) {
   const id = `meal_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const recipeId =
     type === "takeaway" || type === "mum" ? null : state.activeRecipeId;
+  if (!recipeId && type !== "takeaway" && type !== "mum") {
+    authError.textContent = "Add a recipe before placing meal blocks.";
+    return;
+  }
   const meal = {
     id,
     type,
@@ -311,6 +369,7 @@ document.querySelectorAll(".block").forEach((block) => {
 
 document.getElementById("recipeForm").addEventListener("submit", (event) => {
   event.preventDefault();
+  authError.textContent = "";
   const name = document.getElementById("recipeName").value.trim();
   const ingredient = document.getElementById("ingredientName").value.trim();
   const grams = Number(document.getElementById("ingredientGrams").value);
@@ -320,18 +379,7 @@ document.getElementById("recipeForm").addEventListener("submit", (event) => {
     return;
   }
 
-  const newRecipe = {
-    id: `r_${Date.now()}`,
-    name,
-    isRotation: false,
-    ingredients: [{ name: ingredient, grams, category }],
-  };
-  recipes.push(newRecipe);
-  state.activeRecipeId = newRecipe.id;
-
-  event.target.reset();
-  renderRecipeLists();
-  scheduleAutoSave();
+  addRecipe({ name, ingredient, grams, category, form: event.target });
 });
 
 buildListButton.addEventListener("click", buildGroceryList);
@@ -389,11 +437,18 @@ async function refreshSession() {
     loginForm.classList.add("hidden");
     sessionInfo.classList.remove("hidden");
     userEmail.textContent = session.user.email || "Signed in";
+    await loadRecipes();
     await loadState();
+    ensureActiveRecipe();
   } else {
     loginForm.classList.remove("hidden");
     sessionInfo.classList.add("hidden");
     userEmail.textContent = "";
+    recipes = [];
+    state.activeRecipeId = null;
+    renderRecipeLists();
+    renderWeek();
+    buildGroceryList();
   }
 }
 
@@ -412,7 +467,6 @@ async function saveState(options = {}) {
     data: {
       days: state.days,
       meals: state.meals,
-      recipes,
       activeRecipeId: state.activeRecipeId,
       checkedItems: state.checkedItems,
     },
@@ -458,9 +512,9 @@ function applyLoadedState(data) {
   });
   state.days = normalizedDays;
   state.meals = data.meals || {};
-  recipes = Array.isArray(data.recipes) && data.recipes.length ? data.recipes : recipes;
   state.activeRecipeId = data.activeRecipeId || state.activeRecipeId;
   state.checkedItems = Array.isArray(data.checkedItems) ? data.checkedItems : [];
+  ensureActiveRecipe();
   renderRecipeLists();
   renderWeek();
   buildGroceryList();
