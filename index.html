@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Meal Blocks Planner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Space+Grotesk:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Sunday Session</p>
+          <h1>Meal Blocks Planner</h1>
+          <p class="subtitle">
+            Drag blocks onto the week, pick a recipe, and build the grocery list.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <div class="progress">
+            <span id="progressText">0 of 7 nights planned</span>
+            <div class="progress-bar">
+              <div id="progressFill" class="progress-fill"></div>
+            </div>
+          </div>
+          <div class="auth-panel">
+            <form id="loginForm" class="login-form">
+              <input type="email" id="email" placeholder="Email" required />
+              <input
+                type="password"
+                id="password"
+                placeholder="Password"
+                required
+              />
+              <button type="submit">Sign in</button>
+              <p id="authError" class="hint"></p>
+            </form>
+            <div id="sessionInfo" class="session-info hidden">
+              <span id="userEmail"></span>
+              <div class="session-actions">
+                <button id="saveState" type="button">Save</button>
+                <button id="loadState" type="button">Load</button>
+                <button id="signOut" type="button">Sign out</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel">
+          <div class="panel-section">
+            <h2>Blocks</h2>
+            <div class="block-palette">
+              <div class="block two" draggable="true" data-type="twoNight">
+                2-night
+              </div>
+              <div class="block one" draggable="true" data-type="oneNight">
+                1-night
+              </div>
+              <div class="block takeaway" draggable="true" data-type="takeaway">
+                Takeaway
+              </div>
+              <div class="block mum" draggable="true" data-type="mum">
+                Mum's food
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-section">
+            <h2>Recipe Bank</h2>
+            <p class="hint">Click a recipe to make it active for new blocks.</p>
+            <div class="recipe-group">
+              <h3>Rotation</h3>
+              <div id="rotationList" class="recipe-list"></div>
+            </div>
+            <div class="recipe-group">
+              <h3>Trial</h3>
+              <div id="trialList" class="recipe-list"></div>
+            </div>
+          </div>
+
+          <div class="panel-section">
+            <h2>Add a Trial Recipe</h2>
+            <form id="recipeForm" class="recipe-form">
+              <input
+                type="text"
+                id="recipeName"
+                placeholder="Recipe name"
+                required
+              />
+              <div class="ingredient-row">
+                <input
+                  type="text"
+                  id="ingredientName"
+                  placeholder="Ingredient"
+                  required
+                />
+                <input
+                  type="number"
+                  id="ingredientGrams"
+                  placeholder="Grams"
+                  min="1"
+                  required
+                />
+                <select id="ingredientCategory" required>
+                  <option value="" disabled selected>Category</option>
+                  <option value="produce">Produce</option>
+                  <option value="meat">Meat</option>
+                  <option value="dairy">Dairy</option>
+                  <option value="pantry">Pantry</option>
+                  <option value="freezer">Freezer</option>
+                </select>
+              </div>
+              <button type="submit">Add trial recipe</button>
+            </form>
+          </div>
+        </section>
+
+        <section class="workspace">
+          <div class="week-header">
+            <h2>Week Plan</h2>
+            <span class="hint">Drop blocks to auto-fill the week.</span>
+          </div>
+          <div id="weekGrid" class="week-grid"></div>
+
+          <div class="grocery">
+            <div class="grocery-header">
+              <h2>Grocery List</h2>
+              <div class="grocery-actions">
+                <button id="buildList">Build grocery list</button>
+                <button id="copyList">Copy list</button>
+              </div>
+            </div>
+            <div id="groceryList" class="grocery-list"></div>
+            <div class="copy-panel">
+              <label for="copyOutput">Copy-ready list (checked items removed)</label>
+              <textarea id="copyOutput" rows="6" readonly></textarea>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

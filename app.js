@@ -1,0 +1,486 @@
+import { createClient } from "@supabase/supabase-js";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+let recipes = [
+  {
+    id: "r1",
+    name: "Butter Chicken",
+    isRotation: true,
+    ingredients: [
+      { name: "Chicken breast", grams: 800, category: "meat" },
+      { name: "Onion", grams: 200, category: "produce" },
+      { name: "Yogurt", grams: 200, category: "dairy" },
+      { name: "Rice", grams: 500, category: "pantry" },
+    ],
+  },
+  {
+    id: "r2",
+    name: "Stir Fry",
+    isRotation: true,
+    ingredients: [
+      { name: "Broccoli", grams: 400, category: "produce" },
+      { name: "Soy sauce", grams: 30, category: "pantry" },
+      { name: "Garlic", grams: 15, category: "produce" },
+    ],
+  },
+  {
+    id: "r3",
+    name: "Chili",
+    isRotation: true,
+    ingredients: [
+      { name: "Beef mince", grams: 500, category: "meat" },
+      { name: "Kidney beans", grams: 300, category: "pantry" },
+      { name: "Onion", grams: 100, category: "produce" },
+    ],
+  },
+  {
+    id: "r4",
+    name: "Miso Salmon",
+    isRotation: false,
+    ingredients: [
+      { name: "Salmon", grams: 500, category: "meat" },
+      { name: "Miso paste", grams: 40, category: "pantry" },
+      { name: "Spring onion", grams: 50, category: "produce" },
+    ],
+  },
+];
+
+const state = {
+  days: weekdays.map((label) => ({
+    label,
+    mealId: null,
+    continuation: false,
+  })),
+  meals: {},
+  activeRecipeId: "r1",
+  checkedItems: [],
+};
+
+const rotationList = document.getElementById("rotationList");
+const trialList = document.getElementById("trialList");
+const weekGrid = document.getElementById("weekGrid");
+const groceryList = document.getElementById("groceryList");
+const buildListButton = document.getElementById("buildList");
+const copyListButton = document.getElementById("copyList");
+const copyOutput = document.getElementById("copyOutput");
+const loginForm = document.getElementById("loginForm");
+const authError = document.getElementById("authError");
+const sessionInfo = document.getElementById("sessionInfo");
+const userEmail = document.getElementById("userEmail");
+const saveStateButton = document.getElementById("saveState");
+const loadStateButton = document.getElementById("loadState");
+const signOutButton = document.getElementById("signOut");
+const progressText = document.getElementById("progressText");
+const progressFill = document.getElementById("progressFill");
+let autoSaveTimer = null;
+
+function renderRecipeLists() {
+  rotationList.innerHTML = "";
+  trialList.innerHTML = "";
+
+  recipes.forEach((recipe) => {
+    const card = document.createElement("div");
+    card.className = "recipe-card";
+    card.dataset.recipeId = recipe.id;
+    if (recipe.id === state.activeRecipeId) {
+      card.classList.add("active");
+    }
+    card.innerHTML = `<strong>${recipe.name}</strong><small>${
+      recipe.isRotation ? "Rotation" : "Trial"
+    }</small>`;
+    card.addEventListener("click", () => {
+      state.activeRecipeId = recipe.id;
+      renderRecipeLists();
+      scheduleAutoSave();
+    });
+    if (recipe.isRotation) {
+      rotationList.appendChild(card);
+    } else {
+      trialList.appendChild(card);
+    }
+  });
+}
+
+function renderWeek() {
+  weekGrid.innerHTML = "";
+
+  state.days.forEach((day, index) => {
+    const dayCard = document.createElement("div");
+    dayCard.className = "day";
+    dayCard.dataset.index = index;
+
+    const header = document.createElement("div");
+    header.className = "day-header";
+    header.innerHTML = `<span>${day.label}</span>`;
+    dayCard.appendChild(header);
+
+    const dropZone = document.createElement("div");
+    dropZone.className = "drop-zone";
+
+    if (!day.mealId) {
+      dropZone.textContent = "Drop a block here";
+    } else {
+      const meal = state.meals[day.mealId];
+      const mealCard = document.createElement("div");
+      mealCard.className = "meal-card";
+      if (day.continuation) {
+        mealCard.classList.add("continuation");
+      }
+      const recipeLabel = meal.recipeId
+        ? recipes.find((r) => r.id === meal.recipeId)?.name
+        : meal.type === "takeaway"
+          ? "Takeaway night"
+          : "Mum's food";
+      const spanLabel =
+        meal.type === "twoNight" ? "2-night meal" : "1-night meal";
+      mealCard.innerHTML = `<strong>${recipeLabel}</strong><span>${spanLabel}</span>`;
+      const clearBtn = document.createElement("button");
+      clearBtn.className = "clear-btn";
+      clearBtn.textContent = "x";
+      clearBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        removeMeal(meal.id);
+      });
+      mealCard.appendChild(clearBtn);
+      dropZone.appendChild(mealCard);
+    }
+
+    dayCard.appendChild(dropZone);
+    dayCard.addEventListener("dragover", (event) => {
+      event.preventDefault();
+    });
+    dayCard.addEventListener("drop", (event) => {
+      event.preventDefault();
+      const type = event.dataTransfer.getData("text/plain");
+      addMealToDay(type, index);
+    });
+
+    weekGrid.appendChild(dayCard);
+  });
+
+  updateProgress();
+}
+
+function updateProgress() {
+  const planned = state.days.filter((day) => day.mealId && !day.continuation)
+    .length;
+  progressText.textContent = `${planned} of 7 nights planned`;
+  progressFill.style.width = `${(planned / 7) * 100}%`;
+}
+
+function addMealToDay(type, index) {
+  const id = `meal_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const recipeId =
+    type === "takeaway" || type === "mum" ? null : state.activeRecipeId;
+  const meal = {
+    id,
+    type,
+    recipeId,
+  };
+  state.meals[id] = meal;
+
+  clearDay(index);
+  state.days[index].mealId = id;
+  state.days[index].continuation = false;
+
+  if (type === "twoNight" && index + 1 < state.days.length) {
+    clearDay(index + 1);
+    state.days[index + 1].mealId = id;
+    state.days[index + 1].continuation = true;
+  }
+
+  renderWeek();
+  scheduleAutoSave();
+}
+
+function clearDay(index) {
+  const day = state.days[index];
+  if (!day.mealId) {
+    return;
+  }
+  const mealId = day.mealId;
+  state.days[index].mealId = null;
+  state.days[index].continuation = false;
+
+  const linkedIndex = state.days.findIndex(
+    (entry, idx) =>
+      idx !== index && entry.mealId === mealId && entry.continuation
+  );
+  if (linkedIndex !== -1) {
+    state.days[linkedIndex].mealId = null;
+    state.days[linkedIndex].continuation = false;
+  }
+  delete state.meals[mealId];
+}
+
+function removeMeal(mealId) {
+  state.days.forEach((day) => {
+    if (day.mealId === mealId) {
+      day.mealId = null;
+      day.continuation = false;
+    }
+  });
+  delete state.meals[mealId];
+  renderWeek();
+  scheduleAutoSave();
+}
+
+function buildGroceryList() {
+  groceryList.innerHTML = "";
+  copyOutput.value = "";
+  const totals = {};
+  const seenMeals = new Set();
+
+  state.days.forEach((day) => {
+    if (!day.mealId || seenMeals.has(day.mealId)) {
+      return;
+    }
+    seenMeals.add(day.mealId);
+    const meal = state.meals[day.mealId];
+    if (!meal?.recipeId) {
+      return;
+    }
+    const recipe = recipes.find((item) => item.id === meal.recipeId);
+    recipe?.ingredients.forEach((ingredient) => {
+      const key = `${ingredient.category}:${ingredient.name}`;
+      totals[key] = totals[key] || {
+        name: ingredient.name,
+        category: ingredient.category,
+        grams: 0,
+      };
+      totals[key].grams += ingredient.grams;
+    });
+  });
+
+  const grouped = Object.values(totals).reduce((acc, item) => {
+    acc[item.category] = acc[item.category] || [];
+    acc[item.category].push(item);
+    return acc;
+  }, {});
+
+  const categories = ["produce", "meat", "dairy", "pantry", "freezer"];
+  categories.forEach((category) => {
+    const items = grouped[category];
+    if (!items || items.length === 0) {
+      return;
+    }
+    const categoryCard = document.createElement("div");
+    categoryCard.className = "grocery-category";
+    categoryCard.innerHTML = `<h4>${category}</h4>`;
+    items.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "grocery-item";
+      const label = document.createElement("label");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      const lineText = `${item.name} ${item.grams}g`;
+      checkbox.checked = state.checkedItems.includes(lineText);
+      checkbox.addEventListener("change", updateCopyOutput);
+      label.appendChild(checkbox);
+      const text = document.createElement("span");
+      text.textContent = lineText;
+      label.appendChild(text);
+      row.appendChild(label);
+      categoryCard.appendChild(row);
+    });
+    groceryList.appendChild(categoryCard);
+  });
+
+  if (groceryList.innerHTML === "") {
+    groceryList.innerHTML =
+      "<p class='hint'>Add meals first to build your list.</p>";
+    copyOutput.value = "";
+  } else {
+    updateCopyOutput();
+  }
+}
+
+function handleDragStart(event) {
+  event.dataTransfer.setData("text/plain", event.target.dataset.type);
+}
+
+document.querySelectorAll(".block").forEach((block) => {
+  block.addEventListener("dragstart", handleDragStart);
+});
+
+document.getElementById("recipeForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = document.getElementById("recipeName").value.trim();
+  const ingredient = document.getElementById("ingredientName").value.trim();
+  const grams = Number(document.getElementById("ingredientGrams").value);
+  const category = document.getElementById("ingredientCategory").value;
+
+  if (!name || !ingredient || !grams || !category) {
+    return;
+  }
+
+  const newRecipe = {
+    id: `r_${Date.now()}`,
+    name,
+    isRotation: false,
+    ingredients: [{ name: ingredient, grams, category }],
+  };
+  recipes.push(newRecipe);
+  state.activeRecipeId = newRecipe.id;
+
+  event.target.reset();
+  renderRecipeLists();
+  scheduleAutoSave();
+});
+
+buildListButton.addEventListener("click", buildGroceryList);
+copyListButton.addEventListener("click", async () => {
+  updateCopyOutput();
+  try {
+    await navigator.clipboard.writeText(copyOutput.value);
+  } catch (error) {
+    copyOutput.focus();
+    copyOutput.select();
+  }
+});
+
+renderRecipeLists();
+renderWeek();
+buildGroceryList();
+
+function updateCopyOutput() {
+  const lines = [];
+  const checked = [];
+  document.querySelectorAll(".grocery-item").forEach((item) => {
+    const checkbox = item.querySelector("input[type='checkbox']");
+    const text = item.querySelector("span")?.textContent || "";
+    if (checkbox && !checkbox.checked && text) {
+      lines.push(text);
+    } else if (checkbox && checkbox.checked && text) {
+      checked.push(text);
+    }
+  });
+  state.checkedItems = checked;
+  copyOutput.value = lines.join("\n");
+  scheduleAutoSave();
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  authError.textContent = "";
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+  const { error } = await supabaseClient.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (error) {
+    authError.textContent = "Sign in failed. Check the email and password.";
+    return;
+  }
+  await refreshSession();
+}
+
+async function refreshSession() {
+  const { data } = await supabaseClient.auth.getSession();
+  const session = data?.session;
+  if (session?.user) {
+    loginForm.classList.add("hidden");
+    sessionInfo.classList.remove("hidden");
+    userEmail.textContent = session.user.email || "Signed in";
+    await loadState();
+  } else {
+    loginForm.classList.remove("hidden");
+    sessionInfo.classList.add("hidden");
+    userEmail.textContent = "";
+  }
+}
+
+async function saveState(options = {}) {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+  if (!user) {
+    if (!options.silent) {
+      authError.textContent = "Sign in to save.";
+    }
+    return;
+  }
+  const payload = {
+    user_id: user.id,
+    data: {
+      days: state.days,
+      meals: state.meals,
+      recipes,
+      activeRecipeId: state.activeRecipeId,
+      checkedItems: state.checkedItems,
+    },
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabaseClient
+    .from("planner_state")
+    .upsert(payload, { onConflict: "user_id" });
+  if (error) {
+    if (!options.silent) {
+      authError.textContent = "Save failed. Check Supabase setup.";
+    }
+  }
+}
+
+async function loadState() {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+  if (!user) {
+    return;
+  }
+  const { data, error } = await supabaseClient
+    .from("planner_state")
+    .select("data")
+    .eq("user_id", user.id)
+    .single();
+  if (error || !data?.data) {
+    return;
+  }
+  applyLoadedState(data.data);
+}
+
+function applyLoadedState(data) {
+  const loadedDays = Array.isArray(data.days) ? data.days : [];
+  const normalizedDays = weekdays.map((label, index) => {
+    const entry = loadedDays[index] || {};
+    return {
+      label,
+      mealId: entry.mealId || null,
+      continuation: Boolean(entry.continuation),
+    };
+  });
+  state.days = normalizedDays;
+  state.meals = data.meals || {};
+  recipes = Array.isArray(data.recipes) && data.recipes.length ? data.recipes : recipes;
+  state.activeRecipeId = data.activeRecipeId || state.activeRecipeId;
+  state.checkedItems = Array.isArray(data.checkedItems) ? data.checkedItems : [];
+  renderRecipeLists();
+  renderWeek();
+  buildGroceryList();
+}
+
+loginForm.addEventListener("submit", handleLogin);
+saveStateButton.addEventListener("click", saveState);
+loadStateButton.addEventListener("click", loadState);
+signOutButton.addEventListener("click", async () => {
+  await supabaseClient.auth.signOut();
+  await refreshSession();
+});
+
+refreshSession();
+
+function scheduleAutoSave() {
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer);
+  }
+  autoSaveTimer = setTimeout(() => {
+    saveState({ silent: true });
+  }, 800);
+}
