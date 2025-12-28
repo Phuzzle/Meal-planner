@@ -141,8 +141,7 @@ function renderWeek() {
 }
 
 function updateProgress() {
-  const planned = state.days.filter((day) => day.mealId && !day.continuation)
-    .length;
+  const planned = state.days.filter((day) => day.mealId).length;
   progressText.textContent = `${planned} of 7 nights planned`;
   progressFill.style.width = `${(planned / 7) * 100}%`;
 }
