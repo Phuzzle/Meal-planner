@@ -506,13 +506,13 @@ function updateCopyOutput() {
     const checkbox = item.querySelector("input[type='checkbox']");
     const text = item.querySelector("span")?.textContent || "";
     if (checkbox && !checkbox.checked && text) {
-      lines.push(text);
+      lines.push(`- ${text}`);
     } else if (checkbox && checkbox.checked && text) {
       checked.push(text);
     }
   });
   state.checkedItems = checked;
-  copyOutput.value = lines.join("\n");
+  copyOutput.value = lines.join("\r\n");
   scheduleAutoSave();
 }
 
