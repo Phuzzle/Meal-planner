@@ -488,7 +488,20 @@ buildListButton.addEventListener("click", buildGroceryList);
 copyListButton.addEventListener("click", async () => {
   updateCopyOutput();
   try {
-    await navigator.clipboard.writeText(copyOutput.value);
+    const lines = copyOutput.value.split("\n").filter(Boolean);
+    const plainText = lines.join("\n");
+    const htmlList = `<ul>${lines
+      .map((line) => `<li>${escapeHtml(line.replace(/^-\\s*/, ""))}</li>`)
+      .join("")}</ul>`;
+    if (window.ClipboardItem && navigator.clipboard.write) {
+      const item = new ClipboardItem({
+        "text/plain": new Blob([plainText], { type: "text/plain" }),
+        "text/html": new Blob([htmlList], { type: "text/html" }),
+      });
+      await navigator.clipboard.write([item]);
+    } else {
+      await navigator.clipboard.writeText(plainText);
+    }
   } catch (error) {
     copyOutput.focus();
     copyOutput.select();
@@ -512,8 +525,17 @@ function updateCopyOutput() {
     }
   });
   state.checkedItems = checked;
-  copyOutput.value = lines.join("\r\n");
+  copyOutput.value = lines.join("\n");
   scheduleAutoSave();
+}
+
+function escapeHtml(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 async function handleLogin(event) {
